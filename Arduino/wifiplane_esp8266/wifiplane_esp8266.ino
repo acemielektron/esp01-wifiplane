@@ -9,11 +9,29 @@
 #include <WiFiUdp.h>
 
 #define P_ID 1
-#define ST_LED  2
-#define L_MOTOR 5
-#define R_MOTOR 4
 #define DC_RSSI 1500  // Time in mS for send RSSI
 #define DC_RX   900   // Time in mS for tx inactivity 200 old problem of motor stopping flickring
+
+//#define SERIAL_DEBUG  //Enable serial debugging
+#define ESP01_BUILD  //Enable ESP01
+
+#ifdef ESP01_BUILD //ESP01 only have gpio0 (bootstrap), gpio2 (bootstrap), gpio1 (TX & LED), gpio3 (RX)
+  #define REVERSE_ON_OFF //bootstrap pins need to be HIGH on boot
+  #define ST_LED  1
+  #define L_MOTOR 0
+  #define R_MOTOR 2
+#else
+  #define ST_LED  2
+  #define L_MOTOR 5
+  #define R_MOTOR 4
+#endif
+
+#ifdef REVERSE_ON_OFF
+  #define MOTOR_OFF 255
+#else
+  #define MOTOR_OFF 0
+#endif //REVERSE_ON_OFF
+
 ADC_MODE(ADC_VCC);
 unsigned int l_speed = 0;
 unsigned int r_speed = 0;
@@ -36,14 +54,17 @@ WiFiUDP Udp;
 void setup() {
   WiFi.mode(WIFI_STA);
   //WiFi.setOutputPower(2.5);
+  analogWriteFreq(5000);
   analogWriteRange(255);
   pinMode(L_MOTOR, OUTPUT);
   pinMode(R_MOTOR, OUTPUT);
-  analogWrite(L_MOTOR,0);
-  analogWrite(R_MOTOR,0);
+  analogWrite(L_MOTOR,MOTOR_OFF);
+  analogWrite(R_MOTOR,MOTOR_OFF);
   pinMode(ST_LED, OUTPUT);
   digitalWrite(ST_LED,HIGH);
-  //Serial.begin(115200);
+#ifdef SERIAL_DEBUG
+  Serial.begin(115200);
+#endif //SERIAL_DEBUG
   WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) 
   {
@@ -51,7 +72,9 @@ void setup() {
     delay(60);
     digitalWrite(ST_LED,HIGH);
     delay(1000);
-    //Serial.print(".");
+#ifdef SERIAL_DEBUG
+    Serial.print(".");
+#endif //SERIAL_DEBUG
   }
   remotIp=WiFi.localIP();
   remotIp[3] = 255;
@@ -74,11 +97,19 @@ void loop() {
       {
         if(packetBuffer[0] == P_ID)
         {
+          //Speed value sent from app range 1-127
+        #ifdef REVERSE_ON_OFF
+          l_speed = 257-(2*(unsigned int)packetBuffer[1]);
+          r_speed = 257-(2*(unsigned int)packetBuffer[2]);
+        #else
           l_speed = (unsigned int)packetBuffer[1]*2-2;
           r_speed = (unsigned int)packetBuffer[2]*2-2;
-          //Serial.print(l_speed);
-          //Serial.print(" \t");
-          //Serial.println(r_speed);
+        #endif //REVERSE_ON_OFF
+	      #ifdef SERIAL_DEBUG
+          Serial.print(l_speed);
+          Serial.print(" \t");
+          Serial.println(r_speed);
+	      #endif //SERIAL_DEBUG
           analogWrite(L_MOTOR,l_speed);
           analogWrite(R_MOTOR,r_speed);
           premillis_rx = millis();
@@ -100,8 +131,8 @@ void loop() {
      }
      if(millis()-premillis_rx > DC_RX)
      {
-       analogWrite(L_MOTOR,0);
-       analogWrite(R_MOTOR,0);
+       analogWrite(L_MOTOR,MOTOR_OFF);
+       analogWrite(R_MOTOR,MOTOR_OFF);
        //Serial.println("nodata");
      }
   }
@@ -111,8 +142,8 @@ void loop() {
     delay(60);
     digitalWrite(ST_LED,HIGH);
     delay(1000);
-    analogWrite(L_MOTOR,0);
-    analogWrite(R_MOTOR,0);
+    analogWrite(L_MOTOR,MOTOR_OFF);
+    analogWrite(R_MOTOR,MOTOR_OFF);
     digitalWrite(ST_LED,HIGH);
   }
 }

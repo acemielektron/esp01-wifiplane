@@ -8,6 +8,7 @@
 import hypermedia.net.*; // import UDP library
 import ketai.sensors.*;  // import Ketai Sensor library
 import ketai.ui.*;
+import ketai.net.*;
 int app_start=1;
 int DC_UPDATE = 1;//old 3 gives flickring on plane
 byte P_ID = 1;
@@ -30,13 +31,27 @@ int remotPort = 6000;
 int localPort = 2390;
 int offsetl = 0;
 int offsetr = 0;
-String remotIp = "192.168.43.255";  // the remote IP address
+String remotIp = "255.255.255.255";  // the remote IP address
+Boolean remotIpLock = false;
+
+void getBroadcastAddress()
+{
+  String localIp[] = {"0","0","0","0"};
+
+  if ( KetaiNet.getIP() != null)
+    localIp = split(KetaiNet.getIP(), ".");
+  println("My ip address is: " + localIp[0] + "." + localIp[1] + "." + localIp[2] + "." + localIp[3]);
+  remotIp = localIp[0] + "." + localIp[1] + "." + localIp[2] + ".255"; //build broadcast/multicast adddress
+  println("Broadcast address is: " + remotIp);
+}
+
 void setup()
 {
   size(displayWidth,displayHeight);
   orientation(PORTRAIT);
   udp = new UDP( this, localPort );
   udp.listen( true );
+  getBroadcastAddress();
   sensor = new KetaiSensor(this);
   vibe = new KetaiVibrate(this);
   sensor.start();
@@ -95,6 +110,12 @@ void draw()
     {
       vcc = 0;
       rssi = 0;
+      if (remotIpLock)
+      {
+        remotIpLock=false;
+        println("Connection with " + remotIp + " is lost !"); 
+        getBroadcastAddress(); //reset bcast address if network changed       
+      }
     }
     dc_count = 0;
     if(accelerometerX > 1.5){accelerometerX = accelerometerX - 1.5;}
@@ -119,11 +140,11 @@ void draw()
       message[1] = (byte)0x01;
       message[2] = (byte)0x01;
     }
-    println(message[1]);
-    println(message[2]);
+    //println(message[1]);
+    //println(message[2]);
     String msg = new String(message);
     udp.send( msg, remotIp, remotPort );
-    println("msgsend");
+    //println("msgsend");
   }
    
 }
@@ -157,8 +178,17 @@ void mousePressed()
   }
 }
 
+void lockRemoteIp(String ip)
+{
+  remotIp=ip;
+  remotIpLock = true;
+  println("Remote ip is locked to: " + ip);
+}
+
 void receive( byte[] data, String ip, int port ) {  // <-- extended handler
   rst_count=0;
   rssi = data[1];
   vcc  = data[2]+3;
+  if (! remotIpLock)
+    lockRemoteIp(ip);
 }
